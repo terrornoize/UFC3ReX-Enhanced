@@ -92,6 +92,7 @@ struct HostTarget {
   u32 desc[2] = {};  // surface: size bits, format; texture: fetch dwords 1 (format, base), 2 (size)
   u32 fill_owed = 0;  // NR-12a: mip levels not yet filled from guest memory (bit per level)
   std::vector<UfcFillRect> covered;  // what resolves wrote into owed levels since (host pixels)
+  u64 last_used = 0;  // VR-2: SvrFrameIndex() of the last SvrResolveSurface hit (surfaces only)
 };
 std::unordered_map<u32, HostTarget> g_surfaces;  // D3DSurface VA -> host render target
 std::unordered_map<u32, HostTarget> g_targets;   // texture VA -> GPU-written host texture
@@ -115,19 +116,30 @@ bool ReadFetch(u32 texture_va, rex::graphics::xenos::xe_gpu_texture_fetch_t &fet
 // retired target's GPU objects are now freed at frame end once nothing can read them
 // (SweepRetiredLocked); ufc3_native_off bit 1073741824 = kept, as before.
 constexpr int32_t kOffKeepRetired = 1073741824;
+// VR-1: retired surfaces leaked for good. A host surface comes from SurfaceRegistry with a
+// reference count of 1 (InitResourceHeader) that nothing ever drops, so the registry neither
+// reissued it nor freed it when idle: 562 surfaces in a 1 h fight night at 4x, the render target
+// pool 1.2 -> 4.2 GB. A retired surface nothing uses any more now drops that reference and goes back
+// to the registry, which reissues it for the next surface of its size and format
+// (ResetIssuedSurface drains its old resolve links) or frees it after 900 idle frames (Tick, the
+// path its own surfaces take). Its Retired entry is dropped then, since the registry owns it.
+// ufc3_native_off bit 33554432 = surfaces kept, as before.
+constexpr int32_t kOffKeepRetiredSurfaces = 33554432;
 struct Retired {
   GuestTexture *host;
-  bool target;  // a resolve target (g_targets); surfaces stay as they were
-  bool freed;
+  bool target;  // a resolve target (g_targets); else a surface (g_surfaces)
+  bool freed;   // GPU objects freed (target) or handed back to SurfaceRegistry (surface)
 };
 std::vector<Retired> g_retired;
 u32 g_retired_live = 0;
+u32 g_retired_total = 0;  // ever set aside (g_retired drops its entries once handled)
 void RetireHost(GuestTexture *host, bool target = false) {
   if (!host)
     return;
   g_retired.push_back({host, target, false});
   ++g_retired_live;
-  BD_INFO("SvR: {} stale host target(s) set aside, {} not freed", g_retired.size(), g_retired_live);
+  ++g_retired_total;
+  BD_INFO("SvR: {} stale host target(s) set aside, {} not freed", g_retired_total, g_retired_live);
 }
 
 // Whether the renderer has `host` bound or linked anywhere a free would change what is drawn.
@@ -144,15 +156,42 @@ bool HostInUseLocked(const VideoState &s, const GuestTexture *host) {
   return std::find(std::begin(s.textures), std::end(s.textures), host) != std::end(s.textures);
 }
 
+// VR-2: the game frees its surfaces in its own D3D code, which tells the renderer nothing, and
+// makes new ones at new addresses (1099 surface addresses in a 20 min fight night at 4x, 141 of
+// them ever reused): g_surfaces kept a host render target for every dead one. A surface no
+// SetRenderTarget / SetDepthStencilSurface has asked for in kSurfaceIdleFrames is retired like a
+// replaced one (its address asked for again later gets a fresh surface; nothing on the 360 keeps
+// render target contents that long, they live in EDRAM). Retiring frees nothing still bound or
+// linked: SweepRetiredLocked checks that. ufc3_native_off bit 67108864 = kept, as before.
+constexpr int32_t kOffKeepIdleSurfaces = 67108864;
+constexpr u64 kSurfaceIdleFrames = 1800;  // 30 s at 60 fps
+void RetireIdleSurfacesLocked(u64 frame) {
+  if (frame % 300 != 0 || (REXCVAR_GET(ufc3_native_off) & kOffKeepIdleSurfaces))
+    return;
+  u32 n = 0;
+  for (auto it = g_surfaces.begin(); it != g_surfaces.end();) {
+    if (it->second.host && frame - it->second.last_used > kSurfaceIdleFrames) {
+      RetireHost(it->second.host);
+      it = g_surfaces.erase(it);
+      ++n;
+    } else {
+      ++it;
+    }
+  }
+  if (n)
+    BD_INFO("[vr2] {} idle surface(s) retired, {} surfaces live", n, g_surfaces.size());
+}
+
 // Frees the GPU objects of retired targets nothing needs any more (the parked textures go after
 // the frame's fence, as a guest destroy's do). Caller holds g_mutex, not state().mutex.
 void SweepRetiredLocked() {
   if (!g_retired_live || (REXCVAR_GET(ufc3_native_off) & kOffKeepRetired))
     return;
-  u32 freed = 0;
-  double mb = 0;
+  const bool keep_surfaces = (REXCVAR_GET(ufc3_native_off) & kOffKeepRetiredSurfaces) != 0;
+  u32 freed = 0, returned = 0;
+  double mb = 0, returned_mb = 0;
   for (Retired &r : g_retired) {
-    if (r.freed || !r.target || !r.host->texture || UfcWritebackHolds(r.host))
+    if (r.freed || (!r.target && keep_surfaces) || !r.host->texture || UfcWritebackHolds(r.host))
       continue;
     {
       auto &s = state();
@@ -160,8 +199,18 @@ void SweepRetiredLocked() {
       if (HostInUseLocked(s, r.host))
         continue;
     }
-    mb += double(r.host->width) * r.host->height * std::max(1u, r.host->depth) *
-          plume::RenderFormatSize(r.host->format) * 1.34 / (1024.0 * 1024.0);
+    const double size_mb = double(r.host->width) * r.host->height * std::max(1u, r.host->depth) *
+                           plume::RenderFormatSize(r.host->format) * 1.34 / (1024.0 * 1024.0);
+    if (!r.target) {
+      // VR-1: back to SurfaceRegistry, which may reissue or free it from here on.
+      r.host->x360.as_surface.resource.ReferenceCount = 0u;
+      r.freed = true;
+      --g_retired_live;
+      ++returned;
+      returned_mb += size_mb;
+      continue;
+    }
+    mb += size_mb;
     r.host->pendingDestroy = true;
     Video::NotifyTextureDestroyed(r.host);
     ParkTextureGPUObjects(r.host);
@@ -172,6 +221,15 @@ void SweepRetiredLocked() {
   if (freed)
     BD_INFO("[nr14d2] freed {} retired target(s), ~{:.0f} MB; {} retired not freed", freed, mb,
             g_retired_live);
+  if (returned)
+    BD_INFO("[vr1] {} retired surface(s), ~{:.0f} MB, back to the surface registry; {} retired not "
+            "freed", returned, returned_mb, g_retired_live);
+  // A surface handed back may be reissued or freed by the registry: drop those entries so nothing
+  // here touches them again (freed targets keep their struct, as before, and go too).
+  if (freed || returned)
+    g_retired.erase(std::remove_if(g_retired.begin(), g_retired.end(),
+                                   [](const Retired &r) { return r.freed; }),
+                    g_retired.end());
 }
 
 // NR-12a: targets with a fill still owed, for the draw-time check (SvrFillSampledTargets).
@@ -363,8 +421,10 @@ GuestTexture *SvrResolveSurface(u32 surface_va) {
   const u32 bits = surface->SizeBits;
   const u32 format = surface->Format;
   if (auto it = g_surfaces.find(surface_va); it != g_surfaces.end()) {
-    if (it->second.desc[0] == bits && it->second.desc[1] == format)
+    if (it->second.desc[0] == bits && it->second.desc[1] == format) {
+      it->second.last_used = SvrFrameIndex();
       return it->second.host;
+    }
     RetireHost(it->second.host);
     g_surfaces.erase(it);
   }
@@ -379,7 +439,9 @@ GuestTexture *SvrResolveSurface(u32 surface_va) {
     host->keep1x = keep1x;
   BD_INFO("SvR surface 0x{:08X}: {}x{} format 0x{:08X} -> host {}x{} {}", surface_va, width, height,
           format, host_width, host_height, host ? "ok" : "FAILED");
-  g_surfaces.emplace(surface_va, HostTarget{host, {bits, format}});
+  HostTarget entry{host, {bits, format}};
+  entry.last_used = SvrFrameIndex();
+  g_surfaces.emplace(surface_va, std::move(entry));
   return host;
 }
 
@@ -818,6 +880,7 @@ void SvrOnFrame() {
   SvrDrawLogTick(frame + 1);
   {
     std::lock_guard lock(g_mutex);
+    RetireIdleSurfacesLocked(frame + 1);
     SweepRetiredLocked();
   }
   // Present rate and draw counts in the log every 600 frames (pacing check; the draw count is
