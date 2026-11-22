@@ -164,6 +164,8 @@ public:
   // The raw cvar value, for the menu row that cycles it.
   // Output::ConfiguredAspect turns it into a ratio.
   i32 AspectRatio() const { return aspectRatio_; }
+  // UFC (WS-1): Init never runs there, so the native renderer adopts bd_aspect_ratio itself.
+  void AdoptAspectRatioCvar() { AdoptAspectRatio(); }
   bool SetAspectRatio(i32 v);
 
   // Horizontal degrees added to the game's own framing at 16:9, which the menu

@@ -19,7 +19,9 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <plume_render_interface_builders.h>
@@ -55,6 +57,12 @@ REXCVAR_DEFINE_BOOL(ufc3_native_skin_no_hdlig, false, "ufc3",
                     "30,30, which turns the overbright term off, for bisecting");
 
 namespace bd::gpu {
+
+#if defined(SVR_NATIVE_RENDERER)
+float SvrWideFactor();  // native/ufc_resources.cpp (WS-1)
+bool SvrWideActive();
+u64 SvrFrameIndex();
+#endif
 
 namespace {
 
@@ -842,6 +850,52 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
       // Half a pixel right and down, so D3D9-centred geometry samples and covers as on Xenos.
       s.shared.halfPixelOffsetX = 1.0f / w;
       s.shared.halfPixelOffsetY = -1.0f / h;
+    }
+  }
+  // WS-1: a draw into a wide (ultrawide) target is squeezed to the 16:9 width at the centre, so 3D
+  // shows more at the sides with its proportions kept and the HUD stays 16:9; one that samples a
+  // wide target in slot 0 (a full-screen pass over the wide scene: bloom, depth of field, the copy
+  // to the front buffer) covers the whole width as it is.
+  // Outside a match (SvrWideActive false) nothing is squeezed: the frame is drawn stretched and
+  // presented in a 16:9 rect (present.cpp).
+  const GuestTexture *wide_rt = vs.render_target ? vs.render_target : vs.depth_stencil;
+  if (wide_rt && wide_rt->wide && SvrWideActive()) {
+    auto is_wide = [](const GuestTexture *t) {
+      return t && (t->wide || (t->sourceSurface && t->sourceSurface->wide));
+    };
+    // A draw with the viewport transform off (vte 0, window pixels) is a full-screen pass too:
+    // the rocked/stunned blur samples half-size copies (2560x1440 at 4x, not wide), and in a
+    // match nothing else into a wide target draws that way (the HUD has the transform on).
+    const bool vte_off =
+        device_guest && (bd::mem::load<u32>(device_guest + 0x294C) & 0x3Fu) == 0;
+    const bool full_pass = vte_off || is_wide(vs.textures[0]);
+    if (!full_pass) {
+      const float k = 1.0f / SvrWideFactor();
+      s.shared.screenSpaceScaleX *= k;
+      s.shared.screenSpaceOffsetX *= k;
+      s.shared.halfPixelOffsetX *= k;
+    }
+    // Dev aid: each vertex/pixel shader pair first seen squeezed into a wide target, with what its
+    // first slots hold (w = a wide texture), so a full-screen effect squeezed by mistake can be
+    // found by the time it appeared.
+    if (!full_pass && vs.vertex_shader && vs.pixel_shader &&
+        vs.vertex_shader->shaderCacheEntry && vs.pixel_shader->shaderCacheEntry) {
+      static std::mutex m;
+      static std::unordered_set<u64> seen;
+      const u64 key = vs.vertex_shader->shaderCacheEntry->hash * 31u ^
+                      vs.pixel_shader->shaderCacheEntry->hash;
+      std::lock_guard lock(m);
+      if (seen.size() < 4000 && seen.insert(key).second) {
+        std::string slots;
+        for (u32 i = 0; i < 8; ++i) {
+          const GuestTexture *t = vs.textures[i];
+          slots += t ? fmt::format(" t{}={}x{}{}", i, t->width, t->height, is_wide(t) ? "w" : "") : "";
+        }
+        BD_INFO("[ws1] squeezed vs {:016X} ps {:016X} frame {} vte {}{}",
+                vs.vertex_shader->shaderCacheEntry->hash, vs.pixel_shader->shaderCacheEntry->hash,
+                SvrFrameIndex(), device_guest ? (bd::mem::load<u32>(device_guest + 0x294C) & 0x3Fu) : 0u,
+                slots);
+      }
     }
   }
 #endif

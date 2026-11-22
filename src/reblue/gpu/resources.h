@@ -77,6 +77,9 @@ struct GuestTexture {
   bool reflection = false;
   // Native: stays at guest size whatever the render scale (ufc_resources.cpp, Keep1x*).
   bool keep1x = false;
+  // Native WS-1: a full-frame target made wider than 16:9 for an ultrawide bd_aspect_ratio
+  // (SvrWideFactor() times the scaled width); its x coordinates go through SvrScalePxX/EdgeX.
+  bool wide = false;
   // Native: a resolve target whose fill from guest memory is still owed (NR-12a); the first draw
   // or bind that samples it fills it (SvrFillSampledTargets).
   bool svrFillPending = false;

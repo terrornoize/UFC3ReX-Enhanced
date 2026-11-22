@@ -48,6 +48,10 @@ REXCVAR_DEFINE_DOUBLE(ufc3_native_sharpness, 1.0, "ufc3",
 
 namespace bd::gpu {
 
+#if defined(SVR_NATIVE_RENDERER)
+bool SvrWidePresentActive();  // native/ufc_resources.cpp (WS-1)
+#endif
+
 namespace {
 
 void ApplyVsync(VideoState &s) {
@@ -257,10 +261,18 @@ void RecordPresentPass(VideoState &s, GuestTexture *rt,
   const u32 swap_h = s.swap_chain->getHeight();
   const u32 gamma_src_desc = rt->descriptorIndex;
 
-  const double present_aspect =
-      (bd::engine::SofdecPlayer::Playing() && !Output::StretchToFill())
-          ? kDesignCanvasAspect
-          : Output::RenderAspect();
+  // WS-0: bd_aspect_ratio 6 (stretch) fills the window on the native renderer too. It drew a
+  // 16:9 picture whatever was asked, and the fit below pillarboxed it to the picture's own shape.
+  // WS-1: an ultrawide frame drawn outside a match (stretched across the wide front buffer) goes
+  // into a centred 16:9 rect, which squeezes it back to the game's own picture.
+  double present_aspect =
+      Output::StretchToFill() && swap_h
+          ? double(swap_w) / double(swap_h)
+          : (bd::engine::SofdecPlayer::Playing() ? kDesignCanvasAspect : Output::RenderAspect());
+#if defined(SVR_NATIVE_RENDERER)
+  if (rt->wide && !SvrWidePresentActive() && !Output::StretchToFill())
+    present_aspect = kDesignCanvasAspect;
+#endif
   u32 fit_w = swap_w, fit_h = swap_h;
   i32 off_x = 0, off_y = 0;
   Output::ComputeFit(swap_w, swap_h, present_aspect, fit_w, fit_h, off_x,

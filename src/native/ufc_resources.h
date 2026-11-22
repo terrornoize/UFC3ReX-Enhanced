@@ -51,6 +51,17 @@ void SvrOnFrame();
 i32 SvrScalePx(i32 guest_px, const GuestTexture *target);
 // The same for a viewport edge, which the game stores as a float.
 float SvrScaleEdge(float guest_px, const GuestTexture *target);
+// WS-1: the same for an x coordinate. A wide target (ultrawide bd_aspect_ratio) is SvrWideFactor()
+// times wider than its scaled guest width, the 16:9 picture's extra field of view at the sides.
+i32 SvrScalePxX(i32 guest_px, const GuestTexture *target);
+float SvrScaleEdgeX(float guest_px, const GuestTexture *target);
+// bd_aspect_ratio over 16:9 (2 at 32:9, 4/3 at 21:9), else 1: no target is made wide. Fixed for the
+// session once the first render target exists.
+float SvrWideFactor();
+// WS-1: whether the frame being drawn is a wide one (a match), and whether the frame being
+// presented was. Outside a match the frame is drawn stretched and presented in a 16:9 rect.
+bool SvrWideActive();
+bool SvrWidePresentActive();
 // The scale itself, for what isn't a coordinate (occlusion counts). 1 with ufc3_native_off bit 2048.
 float SvrAreaScale();
 // ufc3_native_off bit 2048: whole-number scale only, no 1x targets, as before NR-11.

@@ -36,6 +36,7 @@
 #include "gpu/native_texture_mirror.h"
 #include "gpu/output.h"
 #include "gpu/resources.h"
+#include "gpu/settings.h"
 #include "gpu/vertex_declaration.h"
 #include "ufc_frame_diag.h"
 #include "ufc_nr10_probe.h"
@@ -67,10 +68,13 @@ REXCVAR_DEFINE_BOOL(ufc3_native_keep1x_stain, true, "ufc3",
                     "Native renderer: the mat blood stain map (256x256, its surface and its 565 "
                     "resolve texture) stays 1x at any scale. false = scaled: mat blood slides");
 REXCVAR_DECLARE(int32_t, ufc3_native_off);
+REXCVAR_DECLARE(int32_t, ufc3_native_off2);
 REXCVAR_DEFINE_STRING(ufc3_native_g4, "log", "ufc3",
                       "Native renderer, NR-10f (par/10.md G4): guest memory the CPU rewrites under a live "
                       "resolve target. log = count and name such binds ([nr10] G4 lines, one sample per "
                       "bound target per frame); fix = also re-fill the host target from that memory; off");
+
+bool Ufc3InMatch();  // main.cpp (WS-1)
 
 namespace bd::gpu {
 
@@ -92,7 +96,9 @@ struct HostTarget {
   u32 desc[2] = {};  // surface: size bits, format; texture: fetch dwords 1 (format, base), 2 (size)
   u32 fill_owed = 0;  // NR-12a: mip levels not yet filled from guest memory (bit per level)
   std::vector<UfcFillRect> covered;  // what resolves wrote into owed levels since (host pixels)
-  u64 last_used = 0;  // VR-2: SvrFrameIndex() of the last SvrResolveSurface hit (surfaces only)
+  // SvrFrameIndex() of the last use: VR-2 surfaces, a SvrResolveSurface hit; VR-3 targets, a
+  // resolve into it (SvrResolveTarget) or a bind through its own header (SvrResolveTexture).
+  u64 last_used = 0;
 };
 std::unordered_map<u32, HostTarget> g_surfaces;  // D3DSurface VA -> host render target
 std::unordered_map<u32, HostTarget> g_targets;   // texture VA -> GPU-written host texture
@@ -123,8 +129,8 @@ constexpr int32_t kOffKeepRetired = 1073741824;
 // to the registry, which reissues it for the next surface of its size and format
 // (ResetIssuedSurface drains its old resolve links) or frees it after 900 idle frames (Tick, the
 // path its own surfaces take). Its Retired entry is dropped then, since the registry owns it.
-// ufc3_native_off bit 33554432 = surfaces kept, as before.
-constexpr int32_t kOffKeepRetiredSurfaces = 33554432;
+// ufc3_native_off2 bit 2 = surfaces kept, as before.
+constexpr int32_t kOff2KeepRetiredSurfaces = 2;
 struct Retired {
   GuestTexture *host;
   bool target;  // a resolve target (g_targets); else a surface (g_surfaces)
@@ -162,11 +168,11 @@ bool HostInUseLocked(const VideoState &s, const GuestTexture *host) {
 // SetRenderTarget / SetDepthStencilSurface has asked for in kSurfaceIdleFrames is retired like a
 // replaced one (its address asked for again later gets a fresh surface; nothing on the 360 keeps
 // render target contents that long, they live in EDRAM). Retiring frees nothing still bound or
-// linked: SweepRetiredLocked checks that. ufc3_native_off bit 67108864 = kept, as before.
-constexpr int32_t kOffKeepIdleSurfaces = 67108864;
+// linked: SweepRetiredLocked checks that. ufc3_native_off2 bit 4 = kept, as before.
+constexpr int32_t kOff2KeepIdleSurfaces = 4;
 constexpr u64 kSurfaceIdleFrames = 1800;  // 30 s at 60 fps
 void RetireIdleSurfacesLocked(u64 frame) {
-  if (frame % 300 != 0 || (REXCVAR_GET(ufc3_native_off) & kOffKeepIdleSurfaces))
+  if (frame % 300 != 0 || (REXCVAR_GET(ufc3_native_off2) & kOff2KeepIdleSurfaces))
     return;
   u32 n = 0;
   for (auto it = g_surfaces.begin(); it != g_surfaces.end();) {
@@ -187,7 +193,7 @@ void RetireIdleSurfacesLocked(u64 frame) {
 void SweepRetiredLocked() {
   if (!g_retired_live || (REXCVAR_GET(ufc3_native_off) & kOffKeepRetired))
     return;
-  const bool keep_surfaces = (REXCVAR_GET(ufc3_native_off) & kOffKeepRetiredSurfaces) != 0;
+  const bool keep_surfaces = (REXCVAR_GET(ufc3_native_off2) & kOff2KeepRetiredSurfaces) != 0;
   u32 freed = 0, returned = 0;
   double mb = 0, returned_mb = 0;
   for (Retired &r : g_retired) {
@@ -257,6 +263,41 @@ bool TargetCurrent(u32 texture_va, std::unordered_map<u32, HostTarget>::iterator
   ForgetPendingFillLocked(it->second.host);
   g_targets.erase(it);
   return false;
+}
+
+// VR-3: resolve targets leaked like surfaces did before VR-2. The game drops a texture it resolved
+// into without telling the renderer and resolves into new ones at new addresses (1193 target
+// addresses in a 50 min fight night at 4x, ~590 ever freed): g_targets kept a host texture for every
+// dead one. A target nothing resolved into or bound through its own header in kTargetIdleFrames is
+// retired like a replaced one. Its pixels are not lost: a resolve not yet in guest memory keeps the
+// host alive (UfcWritebackHolds, checked by SweepRetiredLocked) until a reader through another
+// header or the CPU is served from it, and a later bind of the same address finds no target and
+// mirrors guest memory, pending resolves written back first (SvrResolveTexture). Longer than the
+// surfaces' wait: a target's contents are sampled for a whole fight (the composite skin), and a
+// remade one costs a write-back. ufc3_native_off2 bit 8 = kept, as before.
+constexpr int32_t kOff2KeepIdleTargets = 8;
+constexpr u64 kTargetIdleFrames = 3600;  // 60 s at 60 fps
+void RetireIdleTargetsLocked(u64 frame) {
+  if (frame % 300 != 150 || (REXCVAR_GET(ufc3_native_off2) & kOff2KeepIdleTargets))
+    return;
+  u32 n = 0, empty = 0;
+  for (auto it = g_targets.begin(); it != g_targets.end();) {
+    if (frame - it->second.last_used <= kTargetIdleFrames) {
+      ++it;
+      continue;
+    }
+    if (it->second.host) {
+      RetireHost(it->second.host, /*target=*/true);
+      ForgetPendingFillLocked(it->second.host);
+      ++n;
+    } else {
+      ++empty;  // an address whose header couldn't be read: nothing to free, just the entry
+    }
+    it = g_targets.erase(it);
+  }
+  if (n || empty)
+    BD_INFO("[vr3] {} idle target(s) retired ({} empty entries dropped), {} targets live", n, empty,
+            g_targets.size());
 }
 
 }  // namespace
@@ -386,10 +427,91 @@ bool Keep1xTexture(u32 width, u32 height, u32 fetch_format) {
                              (fetch_format == kFetch565 && Keep1xStain(width, height)));
 }
 
+// WS-1: an ultrawide picture by drawing wider, not by stretching. The game draws its 16:9 frame;
+// the targets a full frame is drawn into (guest 1280x720, up to a tile over: the scene, its depth,
+// the copies post-processing reads, the front buffer; not the 2048x1024 career composite) are made
+// SvrWideFactor() times wider, and the vertex
+// shaders of draws into them squeeze x by that factor (UploadSharedConstants, g_ScreenSpace): 3D
+// keeps its proportions and shows more at the sides (Hor+), the HUD stays a centred 16:9. A
+// full-screen pass that samples a wide target (bloom, depth of field, the copy to the front buffer)
+// isn't squeezed, so it covers the whole width. Smaller targets (half-size bloom chains) stay
+// 16:9: a pass into one squeezes the wide picture whole and the pass back out widens it again.
+constexpr u32 kFullFrameWidth = 1280, kFullFrameHeight = 720;
+
+bool WideFullFrame(u32 width, u32 height, bool keep1x) {
+  return SvrWideFactor() > 1.0f && !keep1x && width >= kFullFrameWidth &&
+         width <= kFullFrameWidth + 32 && height >= kFullFrameHeight &&
+         height <= kFullFrameHeight + 32;
+}
+
+u32 WideHostWidth(u32 host_width) {
+  // A multiple of 8, as Output::ComputeFit's present rects are.
+  return (u32(std::lround(double(host_width) * SvrWideFactor())) + 7u) & ~7u;
+}
+
+}  // namespace
+
+float SvrWideFactor() {
+  static const float factor = [] {
+    // UFC never calls gpu::Settings::Init (re:Blue's), so bd_aspect_ratio from ufc3.toml never
+    // reached Settings: adopt it here, which also refits the present rect (Output::Recompute).
+    Settings::Get().AdoptAspectRatioCvar();
+    const double aspect = Output::ConfiguredAspect();
+    const double f = aspect / (16.0 / 9.0);
+    const float wide = f > 1.01 ? float(std::min(f, 3.0)) : 1.0f;
+    if (wide > 1.0f)
+      BD_INFO("[ws1] ultrawide: aspect {:.3f}, full-frame targets {:.3f}x wider", aspect, wide);
+    return wide;
+  }();
+  return factor;
+}
+
+// WS-1: the wide picture is for the match only (Ufc3InMatch, main.cpp); menus keep the game's
+// 16:9. Outside a match nothing is squeezed: the frame is drawn stretched across the wide targets
+// and presented squeezed back into a centred 16:9 rect, so it looks as it always did. Latched once
+// a frame: g_wide_draw for the draws of the frame being built, g_wide_present for the frame Swap is
+// presenting (drawn under the previous g_wide_draw).
+std::atomic<bool> g_wide_draw{false}, g_wide_present{false};
+
+bool SvrWideActive() { return g_wide_draw.load(std::memory_order_relaxed); }
+bool SvrWidePresentActive() { return g_wide_present.load(std::memory_order_relaxed); }
+
+namespace {
+// The match-flow dispatcher pauses during some match moments (5-7 s when a fighter is rocked):
+// the match counts as on until it has been quiet this long.
+constexpr u64 kMatchGraceMs = 8000;
+
+void LatchWideFrame() {
+  g_wide_present.store(g_wide_draw.load(std::memory_order_relaxed), std::memory_order_relaxed);
+  static u64 last_in_match = 0;
+  const u64 now = GetTickCount64();
+  if (SvrWideFactor() > 1.0f && Ufc3InMatch())
+    last_in_match = now;
+  const bool next = last_in_match && now - last_in_match < kMatchGraceMs;
+  if (next != g_wide_draw.load(std::memory_order_relaxed))
+    BD_INFO("[ws1] {}", next ? "match: wide picture" : "out of the match: 16:9 picture");
+  g_wide_draw.store(next, std::memory_order_relaxed);
+}
 }  // namespace
 
 i32 SvrScalePx(i32 guest_px, const GuestTexture *target) {
   return (target && target->keep1x) ? guest_px : ScaleUp(guest_px);
+}
+
+i32 SvrScalePxX(i32 guest_px, const GuestTexture *target) {
+  if (!target || !target->wide)
+    return SvrScalePx(guest_px, target);
+  const ScaleRatio &r = Ratio();
+  return i32(std::lround(double(guest_px) * r.num / r.den * SvrWideFactor()));
+}
+
+float SvrScaleEdgeX(float guest_px, const GuestTexture *target) {
+  if (!target || !target->wide)
+    return SvrScaleEdge(guest_px, target);
+  const float whole = std::floor(guest_px);
+  if (whole == guest_px)
+    return float(SvrScalePxX(i32(whole), target));
+  return guest_px * float(Ratio().num) / float(Ratio().den) * SvrWideFactor();
 }
 
 float SvrScaleEdge(float guest_px, const GuestTexture *target) {
@@ -431,12 +553,17 @@ GuestTexture *SvrResolveSurface(u32 surface_va) {
   const u32 width = (bits >> 18) + 1;
   const u32 height = ((bits >> 3) & 0x7FFF) + 1;
   const bool keep1x = Keep1xSurface(width, height, format);
-  const u32 host_width = keep1x ? width : u32(ScaleUp(i32(width)));
+  const bool wide = WideFullFrame(width, height, keep1x);
+  u32 host_width = keep1x ? width : u32(ScaleUp(i32(width)));
   const u32 host_height = keep1x ? height : u32(ScaleUp(i32(height)));
+  if (wide)
+    host_width = WideHostWidth(host_width);
   SvrDiagTimer create(SvrDiag::kTargetCreate);
   GuestTexture *host = SvrCreateHostSurface(host_width, host_height, format);
-  if (host)
+  if (host) {
     host->keep1x = keep1x;
+    host->wide = wide;
+  }
   BD_INFO("SvR surface 0x{:08X}: {}x{} format 0x{:08X} -> host {}x{} {}", surface_va, width, height,
           format, host_width, host_height, host ? "ok" : "FAILED");
   HostTarget entry{host, {bits, format}};
@@ -451,11 +578,15 @@ GuestTexture *SvrResolveTarget(u32 texture_va, const GuestTexture *source, bool 
   if (auto *host = HostResourceHeap::FromGuest<GuestTexture>(texture_va))
     return host;
   std::lock_guard lock(g_mutex);
-  if (auto it = g_targets.find(texture_va); it != g_targets.end() && TargetCurrent(texture_va, it))
+  if (auto it = g_targets.find(texture_va); it != g_targets.end() && TargetCurrent(texture_va, it)) {
+    it->second.last_used = SvrFrameIndex();
     return it->second.host;
+  }
   rex::graphics::xenos::xe_gpu_texture_fetch_t fetch{};
   if (!ReadFetch(texture_va, fetch)) {
-    g_targets.emplace(texture_va, HostTarget{});
+    HostTarget empty;
+    empty.last_used = SvrFrameIndex();
+    g_targets.emplace(texture_va, std::move(empty));
     return nullptr;
   }
   const u32 width = fetch.size_2d.width + 1;
@@ -474,8 +605,13 @@ GuestTexture *SvrResolveTarget(u32 texture_va, const GuestTexture *source, bool 
             source->keep1x ? "kept 1x" : "scaled", source->width, source->height);
     keep1x = source->keep1x;
   }
-  const u32 host_width = keep1x ? width : u32(ScaleUp(i32(width)));
+  // WS-1: a full-frame copy of a wide surface (or the front buffer, made before any resolve) is
+  // wide too.
+  const bool wide = WideFullFrame(width, height, keep1x) && (!source || source->wide);
+  u32 host_width = keep1x ? width : u32(ScaleUp(i32(width)));
   const u32 host_height = keep1x ? height : u32(ScaleUp(i32(height)));
+  if (wide)
+    host_width = WideHostWidth(host_width);
   // A resolved cube (UFC's per-frame ambient light, slot 13) must be a real cube: tfetchCube reads
   // the slot through the TextureCube heap. size_2d holds the face size. The host cube has no render
   // target flag, so its faces are only written by region copies.
@@ -489,6 +625,7 @@ GuestTexture *SvrResolveTarget(u32 texture_va, const GuestTexture *source, bool 
   u32 fill_owed = 0;
   if (host) {
     host->keep1x = keep1x;
+    host->wide = wide;
     ApplyResolveTargetSwizzle(host, fetch, texture_va);
     // NR-10g: what the memory holds now, so a partial resolve into one level leaves the others as
     // the hardware would (the CAF composite's head pass reads its own levels back). g_mutex is
@@ -508,7 +645,9 @@ GuestTexture *SvrResolveTarget(u32 texture_va, const GuestTexture *source, bool 
       }
     }
   }
-  g_targets.emplace(texture_va, HostTarget{host, {fetch.dword_1, fetch.dword_2}, fill_owed});
+  HostTarget entry{host, {fetch.dword_1, fetch.dword_2}, fill_owed};
+  entry.last_used = SvrFrameIndex();
+  g_targets.emplace(texture_va, std::move(entry));
   return host;
 }
 
@@ -881,6 +1020,8 @@ void SvrOnFrame() {
   {
     std::lock_guard lock(g_mutex);
     RetireIdleSurfacesLocked(frame + 1);
+    RetireIdleTargetsLocked(frame + 1);
+    LatchWideFrame();
     SweepRetiredLocked();
   }
   // Present rate and draw counts in the log every 600 frames (pacing check; the draw count is
@@ -949,6 +1090,7 @@ GuestTexture *SvrResolveTexture(u32 texture_va) {
   std::lock_guard lock(g_mutex);
   if (auto it = g_targets.find(texture_va);
       it != g_targets.end() && it->second.host && TargetCurrent(texture_va, it)) {
+    it->second.last_used = frame;
     // NR-12a: levels no resolve has written yet hold what the memory holds when first sampled.
     FillOwedLocked(texture_va, it->second);
     G4CheckTargetLocked(texture_va, it->second.host, frame);

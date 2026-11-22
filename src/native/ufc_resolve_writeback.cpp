@@ -521,7 +521,7 @@ size_t WriteJob(const Job &j, const u8 *mapped_buffer, std::vector<u8> &temp, st
   const i32 host_x0 = j.box.left, host_y0 = j.box.top;
   std::vector<i32> column_edges(size_t(j.r.x1 - j.r.x0) + 1);
   for (i32 gx = j.r.x0; gx <= j.r.x1; ++gx)
-    column_edges[size_t(gx - j.r.x0)] = SvrScalePx(gx, j.host) - host_x0;
+    column_edges[size_t(gx - j.r.x0)] = SvrScalePxX(gx, j.host) - host_x0;
   split(j.r.y0, j.r.y1, [&](i32 band_y0, i32 band_y1) {
     for (i32 gy = band_y0; gy < band_y1; ++gy) {
       const i32 hy0 = std::clamp(SvrScalePx(gy, j.host) - host_y0, 0, i32(j.host_h) - 1);
@@ -826,9 +826,9 @@ void Serve(u32 first, u32 end, const char *why, const GuestTexture *keep = nullp
           hosts.push_back(j.host);
         const i32 level_w = i32(std::max(1u, j.host->width >> j.level));
         const i32 level_h = i32(std::max(1u, j.host->height >> j.level));
-        const i32 x0 = std::clamp(SvrScalePx(j.r.x0, j.host), 0, level_w - 1);
+        const i32 x0 = std::clamp(SvrScalePxX(j.r.x0, j.host), 0, level_w - 1);
         const i32 y0 = std::clamp(SvrScalePx(j.r.y0, j.host), 0, level_h - 1);
-        const i32 x1 = std::clamp(SvrScalePx(j.r.x1, j.host), x0 + 1, level_w);
+        const i32 x1 = std::clamp(SvrScalePxX(j.r.x1, j.host), x0 + 1, level_w);
         const i32 y1 = std::clamp(SvrScalePx(j.r.y1, j.host), y0 + 1, level_h);
         j.box = plume::RenderBox(x0, y0, x1, y1);
         j.host_w = u32(x1 - x0);

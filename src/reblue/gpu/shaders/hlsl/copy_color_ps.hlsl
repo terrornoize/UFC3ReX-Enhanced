@@ -10,7 +10,26 @@ float4 main(in float4 position : SV_Position, in float2 texCoord : TEXCOORD) : S
     Texture2D<float4> tex = g_Texture2DDescriptorHeap[g_PushConstants.ResourceDescriptorIndex];
     float3 rgb;
     float a;
-    if (g_PushConstants.Param1 < -1.5)
+    if (g_PushConstants.Param1 < -2.5)
+    {
+        // UFC WS-1 rect resolve out of a wide (ultrawide) surface into a 16:9-shaped target: source
+        // texel x = destination pixel x * factor + offset (factor = -Param1 - 2), the factor's
+        // whole columns averaged; y 1:1 + offset. Offsets packed as in the rect resolve below.
+        float factor = -g_PushConstants.Param1 - 2.0;
+        int offX = ((int)(g_PushConstants.ResourceDescriptorIndex2 << 16)) >> 16;
+        int offY = ((int)g_PushConstants.ResourceDescriptorIndex2) >> 16;
+        uint srcW, srcH;
+        tex.GetDimensions(srcW, srcH);
+        int x0 = (int)floor((float)(int)position.x * factor) + offX;
+        int y = (int)position.y + offY;
+        uint taps = max(1u, (uint)factor);
+        float4 acc = 0.0;
+        [loop] for (uint i = 0u; i < taps; ++i)
+            acc += tex.Load(int3(clamp(x0 + (int)i, 0, (int)srcW - 1), y, 0));
+        rgb = acc.rgb / (float)taps;
+        a = acc.a / (float)taps;
+    }
+    else if (g_PushConstants.Param1 < -1.5)
     {
         // UFC target fill (NR-12a): a guest-size level stretched to the host size packed into the
         // second descriptor slot (two 16-bit values), nearest: the texel the CPU fill picks.

@@ -79,7 +79,10 @@ REXCVAR_DEFINE_INT32(ufc3_native_off, 0, "ufc3",
 REXCVAR_DEFINE_INT32(ufc3_native_off2, 0, "ufc3",
                      "Native renderer dev switch, more bits of ufc3_native_off (set = the old path): "
                      "1 filling the half-pixel gap at the left/top of scaled colour resolves (the "
-                     "first covered host column/row copied over the uncovered ones, NR-CE1)");
+                     "first covered host column/row copied over the uncovered ones, NR-CE1), "
+                     "2 handing retired surfaces back to the surface registry (kept, VR-1), "
+                     "4 retiring surfaces unused for 30 s (kept, VR-2), "
+                     "8 retiring resolve targets unused for 60 s (kept, VR-3)");
 REXCVAR_DEFINE_INT32(ufc3_native_list_split_us, 2000, "ufc3",
                      "Native renderer (NR-14c): the frame's command list goes to the GPU, with no "
                      "wait, at the first draw this many microseconds after it was opened (at most 8 "
@@ -341,13 +344,13 @@ void DispatchDraw(u32 device_guest, u32 primitive_type, const char *name,
     // In host pixels of the bound target. By edges, so an odd size (45 rows at 1.5x) still reaches
     // the target's last row.
     const bd::gpu::GuestTexture *target = s.render_target ? s.render_target : s.depth_stencil;
-    const float left = bd::gpu::SvrScaleEdge(float(vp.X), target);
+    const float left = bd::gpu::SvrScaleEdgeX(float(vp.X), target);
     const float top = bd::gpu::SvrScaleEdge(float(vp.Y), target);
     bd::gpu::Video::SetDirtyValue<float>(s.dirtyStates.viewport, s.viewport.x, left);
     bd::gpu::Video::SetDirtyValue<float>(s.dirtyStates.viewport, s.viewport.y, top);
     bd::gpu::Video::SetDirtyValue<float>(
         s.dirtyStates.viewport, s.viewport.width,
-        bd::gpu::SvrScaleEdge(float(vp.X) + float(vp.Width), target) - left);
+        bd::gpu::SvrScaleEdgeX(float(vp.X) + float(vp.Width), target) - left);
     bd::gpu::Video::SetDirtyValue<float>(
         s.dirtyStates.viewport, s.viewport.height,
         bd::gpu::SvrScaleEdge(float(vp.Y) + float(vp.Height), target) - top);
@@ -1341,8 +1344,8 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
   bool have_rect = false;
   if (const auto *r = bd::mem::try_at<const bd::gpu::D3DRect>(src_rect_va)) {
     rect = plume::RenderRect(
-        bd::gpu::SvrScalePx(i32(r->left), full), bd::gpu::SvrScalePx(i32(r->top), full),
-        bd::gpu::SvrScalePx(i32(r->right), full), bd::gpu::SvrScalePx(i32(r->bottom), full));
+        bd::gpu::SvrScalePxX(i32(r->left), full), bd::gpu::SvrScalePx(i32(r->top), full),
+        bd::gpu::SvrScalePxX(i32(r->right), full), bd::gpu::SvrScalePx(i32(r->bottom), full));
     have_rect = true;
   }
   if (dest_va && UfcNr10On()) {
@@ -1376,7 +1379,7 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
       }
       i32 dst_x = 0, dst_y = 0;
       if (const auto *pt = bd::mem::try_at<const be_i32>(dest_point_va)) {
-        dst_x = bd::gpu::SvrScalePx(i32(pt[0]), dst);
+        dst_x = bd::gpu::SvrScalePxX(i32(pt[0]), dst);
         dst_y = bd::gpu::SvrScalePx(i32(pt[1]), dst);
       }
       if (!have_rect && full)
@@ -1414,15 +1417,20 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
           exact = true;
           written = plume::RenderRect(0, 0, lw, lh);
         } else if (!(REXCVAR_GET(ufc3_native_off) & 1)) {
+          // WS-1: fw source columns per destination column out of a wide surface into a target
+          // that isn't (resolve.cpp, ResolveRegionToTexture clamps the same way).
+          const float fw = (full->wide && !dst->wide) ? bd::gpu::SvrWideFactor() : 1.0f;
           i32 sl = rect.left, st = rect.top, dx = dst_x, dy = dst_y;
-          if (sl < 0) { dx -= sl; sl = 0; }
+          if (sl < 0) { dx += i32(std::ceil(float(-sl) / fw)); sl = 0; }
           if (st < 0) { dy -= st; st = 0; }
-          if (dx < 0) { sl -= dx; dx = 0; }
+          if (dx < 0) { sl -= i32(std::lround(float(dx) * fw)); dx = 0; }
           if (dy < 0) { st -= dy; dy = 0; }
-          const i32 sr = std::min<i32>({rect.right, i32(full->width), sl + lw - dx});
+          const i32 sr = std::min<i32>({rect.right, i32(full->width),
+                                        sl + i32(std::lround(float(lw - dx) * fw))});
           const i32 sb = std::min<i32>({rect.bottom, i32(full->height), st + lh - dy});
           exact = true;
-          written = plume::RenderRect(dx, dy, dx + std::max(0, sr - sl), dy + std::max(0, sb - st));
+          written = plume::RenderRect(dx, dy, dx + std::max(0, i32(std::ceil(float(sr - sl) / fw))),
+                                      dy + std::max(0, sb - st));
         }
       }
       bd::gpu::SvrPrepareTargetResolve(dest_va, exact);

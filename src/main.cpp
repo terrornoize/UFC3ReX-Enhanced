@@ -30,3 +30,7 @@
 #include "test_pad.h"
 
 REX_DEFINE_APP(ufc3, Ufc3App::Create)
+
+// WS-1 (native renderer, ultrawide): the wide picture is only for the match itself; menus keep the
+// game's own 16:9. True while the match-flow dispatcher runs (bare_knuckle.h).
+bool Ufc3InMatch() { return ufc3_bk::InMatch(); }

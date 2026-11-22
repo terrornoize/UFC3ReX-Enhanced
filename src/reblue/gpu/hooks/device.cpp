@@ -59,9 +59,9 @@ u32 D3DDevice_Clear_hook([[maybe_unused]] u32 device, [[maybe_unused]] u32 count
     const bd::gpu::GuestTexture *target =
         ((flags & bd::gpu::kClearTarget) && vs.render_target) ? vs.render_target : vs.depth_stencil;
     for (u32 i = 0; i < n; ++i) {
-      host[i].left = bd::gpu::SvrScalePx(i32(guest[i].left), target);
+      host[i].left = bd::gpu::SvrScalePxX(i32(guest[i].left), target);
       host[i].top = bd::gpu::SvrScalePx(i32(guest[i].top), target);
-      host[i].right = bd::gpu::SvrScalePx(i32(guest[i].right), target);
+      host[i].right = bd::gpu::SvrScalePxX(i32(guest[i].right), target);
       host[i].bottom = bd::gpu::SvrScalePx(i32(guest[i].bottom), target);
     }
     if (n) {

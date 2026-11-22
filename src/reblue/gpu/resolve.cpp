@@ -38,6 +38,16 @@ namespace {
 inline const plume::RenderTexture *const kDepthFbKey =
     reinterpret_cast<const plume::RenderTexture *>(uintptr_t{1});
 
+// WS-1: how many source columns make one destination column when part of a wide surface is
+// resolved into a target that isn't wide (1 otherwise).
+float WideSqueezeFactor(const GuestTexture *src, const GuestTexture *dst, bool region) {
+#if defined(SVR_NATIVE_RENDERER)
+  if (region && src && dst && src->wide && !dst->wide)
+    return SvrWideFactor();
+#endif
+  return 1.0f;
+}
+
 GuestTexture *ResolveSourceForFlagsLocked(VideoState &s, u32 flags) {
   if (flags & kResolveDepthStencil)
     return s.depth_stencil;
@@ -111,7 +121,13 @@ bool CopySurfaceToTextureLocked(VideoState &s, GuestTexture *src,
                   u32(region->src.bottom) == src->height && src->width == level_width &&
                   src->height == level_height));
 
-  if (region_copyable && format_match && !needs_scale &&
+  // WS-1: part of a wide (ultrawide) surface into a 16:9-shaped target is squeezed by the wide
+  // factor across, through copy_color_ps (a plain copy would take only its left part).
+  const float wide_fw = WideSqueezeFactor(src, dst, region != nullptr);
+  const bool wide_squeeze = wide_fw > 1.0f && !IsDepthFormat(dst->format) &&
+                            src->sampleCount == plume::RenderSampleCount::COUNT_1;
+
+  if (region_copyable && format_match && !needs_scale && !wide_squeeze &&
       src->sampleCount == plume::RenderSampleCount::COUNT_1) {
     // Part of the surface, same format: a plain region copy.
     plume::RenderTextureBarrier pre[2] = {
@@ -257,7 +273,8 @@ bool CopySurfaceToTextureLocked(VideoState &s, GuestTexture *src,
     }
     s.command_list->setFramebuffer(dst_fb);
     if (region_copy) {
-      const i32 w = region->src.right - region->src.left;
+      const i32 w = wide_squeeze ? i32(std::ceil(float(region->src.right - region->src.left) / wide_fw))
+                                 : region->src.right - region->src.left;
       const i32 h = region->src.bottom - region->src.top;
       s.command_list->setViewports(plume::RenderViewport(
           float(region->dst_x), float(region->dst_y), float(w), float(h)));
@@ -309,10 +326,12 @@ bool CopySurfaceToTextureLocked(VideoState &s, GuestTexture *src,
     if (region_copy) {
       // copy_color_ps rect mode: Param1 < 0, source texel = destination pixel + the offset packed
       // into the second (otherwise unused) descriptor slot as two signed 16-bit values.
-      const i32 off_x = region->src.left - region->dst_x;
+      const i32 off_x = wide_squeeze
+                            ? region->src.left - i32(std::lround(float(region->dst_x) * wide_fw))
+                            : region->src.left - region->dst_x;
       const i32 off_y = region->src.top - region->dst_y;
       push.resourceDescriptorIndex2 = (u32(off_x) & 0xFFFFu) | (u32(off_y) << 16);
-      push.param1 = -1.0f;
+      push.param1 = wide_squeeze ? -(2.0f + wide_fw) : -1.0f;
     }
     s.command_list->setGraphicsPushConstants(kCopyPushConstantRangeIndex, &push,
                                              kCopyPushConstantByteOffset,
@@ -511,8 +530,10 @@ bool Video::ResolveRegionToTexture(u32 flags, GuestTexture *dst, const plume::Re
   const i32 level_height = i32(std::max(1u, dst->height >> level));
   // Clamp to both textures (UFC resolves with a negative top-left in CAF, NR-2 #9).
   ResolveRegion region{src_rect, dst_x, dst_y};
+  // WS-1: across, fw source columns per destination column (wide surface, 16:9-shaped target).
+  const float fw = WideSqueezeFactor(src, dst, true);
   if (region.src.left < 0) {
-    region.dst_x -= region.src.left;
+    region.dst_x += i32(std::ceil(float(-region.src.left) / fw));
     region.src.left = 0;
   }
   if (region.src.top < 0) {
@@ -520,15 +541,16 @@ bool Video::ResolveRegionToTexture(u32 flags, GuestTexture *dst, const plume::Re
     region.src.top = 0;
   }
   if (region.dst_x < 0) {
-    region.src.left -= region.dst_x;
+    region.src.left -= i32(std::lround(float(region.dst_x) * fw));
     region.dst_x = 0;
   }
   if (region.dst_y < 0) {
     region.src.top -= region.dst_y;
     region.dst_y = 0;
   }
-  region.src.right = std::min<i32>({region.src.right, i32(src->width),
-                                    region.src.left + level_width - region.dst_x});
+  region.src.right = std::min<i32>(
+      {region.src.right, i32(src->width),
+       region.src.left + i32(std::lround(float(level_width - region.dst_x) * fw))});
   region.src.bottom = std::min<i32>({region.src.bottom, i32(src->height),
                                      region.src.top + level_height - region.dst_y});
   if (region.src.right <= region.src.left || region.src.bottom <= region.src.top)

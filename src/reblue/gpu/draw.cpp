@@ -265,8 +265,8 @@ void SvrApplyScissor(VideoState &s, u32 device_guest) {
   const i32 top = i32((tl >> 16) & 0x7FFFu);
   const i32 right = std::max(left, i32(br & 0x7FFFu));
   const i32 bottom = std::max(top, i32((br >> 16) & 0x7FFFu));
-  const plume::RenderRect rc{SvrScalePx(left, target), SvrScalePx(top, target),
-                             SvrScalePx(right, target), SvrScalePx(bottom, target)};
+  const plume::RenderRect rc{SvrScalePxX(left, target), SvrScalePx(top, target),
+                             SvrScalePxX(right, target), SvrScalePx(bottom, target)};
   s.command_list->setScissors(&rc, 1);
 }
 #else
