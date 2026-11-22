@@ -65,6 +65,12 @@ public class SettingsTab : ILauncherTab
         var gpuHint = Ui.Text("Native renderer only. Automatic picks the dedicated (high-performance) graphics card on laptops that also have built-in graphics. Pick a card by name to override it; Windows' own per-app graphics setting can override Automatic too.");
         gpuHint.ForeColor = Theme.Muted;
         col.Controls.Add(gpuHint);
+        // WS-1: ultrawide picture in matches (bd_aspect_ratio: 0 = 16:9, 3 = 21:9, 4 = 32:9).
+        col.Controls.Add(Choice("bd_aspect_ratio", "Aspect ratio", new[] { "16:9 (original)", "21:9 ultrawide", "32:9 super ultrawide" },
+            new[] { "0", "3", "4" }, "0", raw: true));
+        var aspectHint = Ui.Text("Native renderer only. 21:9 and 32:9 widen the picture during matches: more of the octagon and the crowd at the sides, fighters keep their proportions, the HUD stays centred. Menus stay 16:9. Uses more video memory.");
+        aspectHint.ForeColor = Theme.Muted;
+        col.Controls.Add(aspectHint);
         // NR-13: present pass (ufc3_native_upscale); a picture as big as the window is never changed.
         col.Controls.Add(Choice("ufc3_native_upscale", "Upscaling", new[] { "Bilinear (default)", "AMD FSR 1" },
             new[] { "bilinear", "auto" }, "bilinear", raw: false));
