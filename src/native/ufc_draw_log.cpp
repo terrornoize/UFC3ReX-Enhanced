@@ -27,6 +27,12 @@
 #include "gpu/d3d.h"
 #include "gpu/device.h"
 #include "gpu/resources.h"
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include "gpu/shaders/shader_constants.h"
 #include "gpu/vertex_declaration.h"
 #include "ufc_geometry.h"
@@ -93,6 +99,20 @@ std::atomic<u64> g_key_frame{0};  // the frame F9 (or ufc3_native_draw_log_at) a
 // ufc3_native_draw_log_at=70,95.5 logs the first frame presented after each of those seconds since
 // the first present. Called once per presented frame.
 void SvrDrawLogTick(u64 frame) {
+#if defined(_WIN32)
+  // F9 (with the game window in front): log the next frame.
+  {
+    static bool was_down = false;
+    const bool down = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+    if (down && !was_down) {
+      DWORD pid = 0;
+      GetWindowThreadProcessId(GetForegroundWindow(), &pid);
+      if (pid == GetCurrentProcessId())
+        SvrDrawLogNextFrame();
+    }
+    was_down = down;
+  }
+#endif
   static const std::vector<double> times = [] {
     std::vector<double> out;
     const std::string list = REXCVAR_GET(ufc3_native_draw_log_at);

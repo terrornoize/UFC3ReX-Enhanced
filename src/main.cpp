@@ -17,6 +17,8 @@
 #include "fighter_music.h"
 #include "unlock_all.h"
 #include "caf_points.h"
+#include "career_length.h"
+#include "round_clock.h"
 #include "ultimate_unlock.h"
 #include "pride_range.h"
 #include "dialogue_trace.h"

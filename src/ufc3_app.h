@@ -12,6 +12,7 @@
 #include "config_check.h"
 #include "ufc3_paths.h"
 #include "mod_pack.h"
+#include "probe.h"
 #include "native/ufc_native.h"
 #include <algorithm>
 #include <atomic>
@@ -247,6 +248,17 @@ class Ufc3App : public rex::ReXApp {
   }
 
   void OnPreLaunchModule() override {
+    // Dev aid: UFC3_DUMP_IMAGE=<file> writes the loaded default.xex image (0x82000000, 0x1640000
+    // bytes, decrypted and decompressed) there, for finding data and strings the code reads.
+    if (const char* dump = std::getenv("UFC3_DUMP_IMAGE")) {
+      if (FILE* f = std::fopen(dump, "wb")) {
+        const uint8_t* image = REX_KERNEL_MEMORY()->virtual_membase() + 0x82000000u;
+        std::fwrite(image, 1, 0x1640000u, f);
+        std::fclose(f);
+        REXLOG_INFO("dev: image dumped to {}", dump);
+      }
+    }
+    ufc3_probe::Start(REX_KERNEL_MEMORY()->virtual_membase());
     if (!g_ufc3_native)
       return;
     // SvR's crash/hang tracer (stack dump on a fault, logs\stderr.txt, hang watchdog).

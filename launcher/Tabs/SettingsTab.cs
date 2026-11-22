@@ -94,6 +94,20 @@ public class SettingsTab : ILauncherTab
         packOnly.Add(Choice("ufc3_bk_bleed_rate", "Bare knuckle bleeding", BkNames, BkValues, "1.5", raw: true));
         foreach (var c in packOnly) col.Controls.Add(c);
 
+        col.Controls.Add(Ui.Head("Career"));
+        col.Controls.Add(Choice("ufc3_career_fights", "Career length", new[] { "48 fights (original)", "96 fights", "192 fights" },
+            new[] { "48", "96", "192" }, "48", raw: true));
+        var careerHint = Ui.Text("Fights before the forced retirement (12, 24 or 48 years of 4 fights). The last-year warning comes in the last year as usual. Works with existing careers; going back to 48 retires a career already past 48 fights at its next check.");
+        careerHint.ForeColor = Theme.Muted;
+        col.Controls.Add(careerHint);
+
+        col.Controls.Add(Ui.Head("Fight"));
+        col.Controls.Add(Choice("ufc3_real_time_clock", "Round clock", new[] { "Original (about 2x fast)", "Real time" },
+            new[] { "false", "true" }, "false", raw: true));
+        var clockHint = Ui.Text("Real time: one second on the round clock is one real second, so a 5:00 round lasts 5 minutes.");
+        clockHint.ForeColor = Theme.Muted;
+        col.Controls.Add(clockHint);
+
         col.Controls.Add(Ui.Head("Unlocks"));
         col.Controls.Add(Check("ufc3_unlock_all", "Unlock everything", false, "Every fighter and unlock-shop item counts as unlocked. Your save is not changed."));
         col.Controls.Add(Check("ufc3_free_unlock_points", "Unlock shop items are free", false, "Buying does not spend unlock points."));

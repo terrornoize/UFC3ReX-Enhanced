@@ -26,6 +26,9 @@ REXCVAR_DEFINE_BOOL(ufc3_trace_flare, false, "ufc3",
                     "Log the arena lights' screen place and vertex colour twice a second, on both "
                     "renderers (NR-8b-6)");
 
+REXCVAR_DEFINE_BOOL(ufc3_trace_flare_all, false, "ufc3",
+                    "With ufc3_trace_flare: every light quad, not just the streaks that name a light");
+
 REX_EXTERN(__imp__sub_82785B58);
 
 namespace ufc3_flare_trace {
@@ -57,10 +60,10 @@ inline void Sample(uint8_t* base, uint32_t command) {
   static uint32_t lines = 0;
 
   const uint32_t header = command + 16;
-  if (Load32(base, header + 8) != 4 || Load32(base, header + 20) != 36)
+  if ((Load32(base, header + 8) != 4 && !REXCVAR_GET(ufc3_trace_flare_all)) || Load32(base, header + 20) != 36)
     return;
   const uint32_t v0 = header + 32;
-  if (Load32(base, v0) != 0xC0F00000u)
+  if (Load32(base, v0) != 0xC0F00000u && !REXCVAR_GET(ufc3_trace_flare_all))
     return;
 
   std::lock_guard lock(mutex);
@@ -81,9 +84,11 @@ inline void Sample(uint8_t* base, uint32_t command) {
   if (lines++ >= kMaxLines)
     return;
   const double t = std::chrono::duration<double>(now - start).count();
-  REXLOG_INFO("[flare] s {} t {:.3f} light {} at {:.3f},{:.3f} colour {:08X} world {:08X} {:08X} {:08X}", sample,
-              t, seen.size() - 1, LoadFloat(base, v0 + 12), LoadFloat(base, v0 + 16), Load32(base, v0 + 24),
-              Load32(base, v0 + 4), Load32(base, v0 + 8), Load32(base, v0 + 20));
+  REXLOG_INFO("[flare] s {} t {:.3f} light {} at {:.3f},{:.3f} colour {:08X} pos {:.2f},{:.2f},{:.2f} "
+              "uv {:.2f},{:.2f} verts {}", sample, t, seen.size() - 1, LoadFloat(base, v0 + 12),
+              LoadFloat(base, v0 + 16), Load32(base, v0 + 24), LoadFloat(base, v0), LoadFloat(base, v0 + 4),
+              LoadFloat(base, v0 + 8), LoadFloat(base, v0 + 28), LoadFloat(base, v0 + 32),
+              Load32(base, header + 8));
 }
 
 }  // namespace ufc3_flare_trace

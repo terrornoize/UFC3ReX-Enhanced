@@ -15077,8 +15077,7 @@ REX_EXTERN(__imp__sub_82B7E158);
 extern "C" REX_FUNC(sub_82B7E158) { if (REXCVAR_GET(ufc3_skip_trace)) ufc3_skip_trace::g_calls[3270].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B7E158(ctx, base); }
 REX_EXTERN(__imp__sub_82B7E188);
 extern "C" REX_FUNC(sub_82B7E188) { if (REXCVAR_GET(ufc3_skip_trace)) ufc3_skip_trace::g_calls[3271].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B7E188(ctx, base); }
-REX_EXTERN(__imp__sub_82B7E270);
-extern "C" REX_FUNC(sub_82B7E270) { if (REXCVAR_GET(ufc3_skip_trace)) ufc3_skip_trace::g_calls[3272].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B7E270(ctx, base); }
+// sub_82B7E270: hooked in round_clock.h instead (not counted).
 REX_EXTERN(__imp__sub_82B7E3D8);
 extern "C" REX_FUNC(sub_82B7E3D8) { if (REXCVAR_GET(ufc3_skip_trace)) ufc3_skip_trace::g_calls[3273].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B7E3D8(ctx, base); }
 REX_EXTERN(__imp__sub_82B7E408);

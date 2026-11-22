@@ -265,8 +265,31 @@ void SvrApplyScissor(VideoState &s, u32 device_guest) {
   const i32 top = i32((tl >> 16) & 0x7FFFu);
   const i32 right = std::max(left, i32(br & 0x7FFFu));
   const i32 bottom = std::max(top, i32((br >> 16) & 0x7FFFu));
-  const plume::RenderRect rc{SvrScalePxX(left, target), SvrScalePx(top, target),
-                             SvrScalePxX(right, target), SvrScalePx(bottom, target)};
+  plume::RenderRect rc{SvrScalePxX(left, target), SvrScalePx(top, target),
+                       SvrScalePxX(right, target), SvrScalePx(bottom, target)};
+  // WS: the match HUD is squeezed to the 16:9 width at the centre (constant_buffers.cpp), and the
+  // game parks HUD sprites it is not showing just off that screen (e.g. two 250x250 glows at
+  // x -265..-15 and 1295..1545 in Pride). On a wide target those land in the side bands, so HUD
+  // draws are cut to the 16:9 area, as the original screen edge did. HUD = its screen-pixel vertex
+  // shaders (found with the F9 draw log, 2026-11-22).
+  if (target && target->wide && SvrWideActive() && s.vertex_shader &&
+      s.vertex_shader->shaderCacheEntry) {
+    const u64 vs = s.vertex_shader->shaderCacheEntry->hash;
+    // Not a full-screen pass (the same test that keeps those unsqueezed): F0DB64DC also copies
+    // the whole wide scene, sampling it from slot 0.
+    const GuestTexture *t0 = s.textures[0];
+    const bool samples_wide = t0 && (t0->wide || (t0->sourceSurface && t0->sourceSurface->wide));
+    const bool vte_off = (bd::mem::load<u32>(device_guest + 0x294C) & 0x3Fu) == 0;
+    if (!samples_wide && !vte_off &&
+        (vs == 0xFFC3E42AFCB53B81ull || vs == 0xD5C4AC6F728F598Dull ||
+         vs == 0xF0DB64DC0CA5B352ull)) {
+      const i32 full = SvrScalePxX(1280, target);
+      const i32 narrow = SvrScalePx(1280, target);
+      const i32 lo = (full - narrow) / 2, hi = lo + narrow;
+      rc.left = std::clamp(lo + SvrScalePx(left, target), lo, hi);
+      rc.right = std::clamp(lo + SvrScalePx(right, target), lo, hi);
+    }
+  }
   s.command_list->setScissors(&rc, 1);
 }
 #else

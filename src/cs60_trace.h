@@ -1527,8 +1527,7 @@ REX_EXTERN(__imp__sub_82B7D290);
 extern "C" REX_FUNC(sub_82B7D290) { if (REXCVAR_GET(ufc3_cs60_trace)) ufc3_cs60_trace::g_calls[367].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B7D290(ctx, base); }
 REX_EXTERN(__imp__sub_82B82E08);
 extern "C" REX_FUNC(sub_82B82E08) { if (REXCVAR_GET(ufc3_cs60_trace)) ufc3_cs60_trace::g_calls[368].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B82E08(ctx, base); }
-REX_EXTERN(__imp__sub_82B868E0);
-extern "C" REX_FUNC(sub_82B868E0) { if (REXCVAR_GET(ufc3_cs60_trace)) ufc3_cs60_trace::g_calls[369].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B868E0(ctx, base); }
+// sub_82B868E0: hooked in round_clock.h instead (not counted).
 REX_EXTERN(__imp__sub_82B8C7A0);
 extern "C" REX_FUNC(sub_82B8C7A0) { if (REXCVAR_GET(ufc3_cs60_trace)) ufc3_cs60_trace::g_calls[370].fetch_add(1, std::memory_order_relaxed); __imp__sub_82B8C7A0(ctx, base); }
 REX_EXTERN(__imp__sub_82B925C0);
