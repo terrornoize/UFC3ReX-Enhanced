@@ -1,6 +1,6 @@
 // ufc3 - opt-in: the round clock in real seconds.
 //
-// How the stock clock runs (found 2026-11-22 with the run-time probe, src/probe.h):
+// How the stock clock runs (found 2026-11-22 with a run-time memory probe):
 //   - The game keeps the time gone in a round in two floats of the match object (match =
 //     [0x83574A08]), both advanced once a frame by the same fixed step:
 //         elapsed += [0x833C80F0] * [0x8333A044]        (1.0 a frame at 60 fps; [0x8333A044] = slow-mo)

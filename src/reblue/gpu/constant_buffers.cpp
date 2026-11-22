@@ -19,9 +19,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <thread>
-#include <unordered_set>
 #include <vector>
 
 #include <plume_render_interface_builders.h>
@@ -61,7 +59,6 @@ namespace bd::gpu {
 #if defined(SVR_NATIVE_RENDERER)
 float SvrWideFactor();  // native/ufc_resources.cpp (WS-1)
 bool SvrWideActive();
-u64 SvrFrameIndex();
 #endif
 
 namespace {
@@ -874,28 +871,6 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
       s.shared.screenSpaceScaleX *= k;
       s.shared.screenSpaceOffsetX *= k;
       s.shared.halfPixelOffsetX *= k;
-    }
-    // Dev aid: each vertex/pixel shader pair first seen squeezed into a wide target, with what its
-    // first slots hold (w = a wide texture), so a full-screen effect squeezed by mistake can be
-    // found by the time it appeared.
-    if (!full_pass && vs.vertex_shader && vs.pixel_shader &&
-        vs.vertex_shader->shaderCacheEntry && vs.pixel_shader->shaderCacheEntry) {
-      static std::mutex m;
-      static std::unordered_set<u64> seen;
-      const u64 key = vs.vertex_shader->shaderCacheEntry->hash * 31u ^
-                      vs.pixel_shader->shaderCacheEntry->hash;
-      std::lock_guard lock(m);
-      if (seen.size() < 4000 && seen.insert(key).second) {
-        std::string slots;
-        for (u32 i = 0; i < 8; ++i) {
-          const GuestTexture *t = vs.textures[i];
-          slots += t ? fmt::format(" t{}={}x{}{}", i, t->width, t->height, is_wide(t) ? "w" : "") : "";
-        }
-        BD_INFO("[ws1] squeezed vs {:016X} ps {:016X} frame {} vte {}{}",
-                vs.vertex_shader->shaderCacheEntry->hash, vs.pixel_shader->shaderCacheEntry->hash,
-                SvrFrameIndex(), device_guest ? (bd::mem::load<u32>(device_guest + 0x294C) & 0x3Fu) : 0u,
-                slots);
-      }
     }
   }
 #endif

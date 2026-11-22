@@ -1,6 +1,6 @@
 // ufc3 - opt-in: longer careers (96 or 192 fights instead of 48).
 //
-// How a career ends (found 2026-11-22 with the run-time probe, src/probe.h):
+// How a career ends (found 2026-11-22 with a run-time memory probe):
 //   - The career manager is G = [0x8335D4A0]; G+220 points at careermode/career_param.bin as loaded
 //     (P), where file offset F is read at P+F+4 (P+4 = the file's first word, 9999). The career
 //     itself is C = [G+8]: C+172 = year (from 0), C+168 = fight within the year (from 0).
