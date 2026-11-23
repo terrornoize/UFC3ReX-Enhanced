@@ -39,9 +39,15 @@ static class Program
         if (args.Length == 2 && (args[0] == "--modpack-install" || args[0] == "--modpack-uninstall"))
         { Environment.Exit(ModPackCli(args[0], args[1])); return; }
         if (args.Length > 0 && args[0] == "--update") { Environment.Exit(Updater.Cli(args)); return; }
+        if (args.Length > 1 && args[0] == "--cloud-sync") { Environment.Exit(CloudSave.Cli(args)); return; }
         if (args.Contains("--dlss5"))
         {
-            try { var start = DateTime.Now.AddSeconds(-2); Dlss5.WaitAndKeepSettings(Dlss5.Launch(Config.Load()), start); }
+            try
+            {
+                if (!CloudSave.BeforePlay()) return;
+                var start = DateTime.Now.AddSeconds(-2); Dlss5.WaitAndKeepSettings(Dlss5.Launch(Config.Load()), start);
+                CloudSave.AfterPlay();
+            }
             catch (Exception ex) { DarkBox.Show("Could not start with DLSS 5: " + ex.Message, "Undisputed Launcher"); }
             return;
         }
@@ -49,8 +55,10 @@ static class Program
         {
             try
             {
+                if (!CloudSave.BeforePlay()) return;
                 if (NativeRenderer.PrepareCache() != null) NativeRenderer.LaunchEmulated(); // reason is in launcher-native.log
                 else NativeRenderer.WaitAndFallBack(NativeRenderer.Launch());
+                CloudSave.AfterPlay();
             }
             catch (Exception ex) { DarkBox.Show("Could not start the game: " + ex.Message, "Undisputed Launcher"); }
             return;

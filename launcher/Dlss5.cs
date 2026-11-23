@@ -177,6 +177,7 @@ public static class Dlss5
     /// stays in the background until the game exits, to keep the F10 panel's settings, then quits.</summary>
     public static void PlayFrom(Control from, Config c)
     {
+        if (!CloudSave.BeforePlay()) return;
         var start = DateTime.Now.AddSeconds(-2);
         var game = Launch(c);
         var form = from.FindForm();
@@ -184,6 +185,7 @@ public static class Dlss5
         new Thread(() =>
         {
             WaitAndKeepSettings(game, start);
+            CloudSave.AfterPlay();
             if (form != null && form.IsHandleCreated) form.BeginInvoke(Application.Exit); else Application.Exit();
         }) { IsBackground = false, Name = "dlss5-wait" }.Start();
     }

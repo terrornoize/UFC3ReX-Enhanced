@@ -159,16 +159,18 @@ public class PlayTab : ILauncherTab
                     if (failed != null)
                     {
                         DarkBox.Show(NativeRenderer.FallbackText(failed), "Undisputed Launcher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        if (!CloudSave.BeforePlay(s => info.Text = s)) return;
                         NativeRenderer.LaunchEmulated();
-                        Application.Exit();
+                        CloudSave.WaitThenExit(root);
                         return;
                     }
                 }
                 NativeRenderer.PlayFrom(root);
                 return;
             }
+            if (!CloudSave.BeforePlay(s => info.Text = s)) return;
             Process.Start(new ProcessStartInfo(Paths.GameExe) { WorkingDirectory = Paths.Root, UseShellExecute = false });
-            Application.Exit();
+            CloudSave.WaitThenExit(root);
         }
         catch (Exception ex)
         {
