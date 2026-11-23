@@ -14,10 +14,14 @@ namespace UFC3Launcher;
 /// </summary>
 public static class Updater
 {
-    /// <summary>GitHub repo that holds the releases. Placeholder until the public repo exists: change only this line.</summary>
-    public const string Repo = "360recomper/UFC3ReX";
+    /// <summary>GitHub repo that holds the releases: the UFC3ReX-Enhanced fork, so an update never swaps this build for the
+    /// original's (which lacks the fork's changes).</summary>
+    public const string Repo = "terrornoize/UFC3ReX-Enhanced";
     public const string ReleasesPage = "https://github.com/" + Repo + "/releases/latest";
     const string Api = "https://api.github.com/repos/" + Repo + "/releases/latest";
+    /// <summary>The DLSS 5 add-on is the original project's (360recomper/UFC3ReX), attached to its v1.1.8 release.</summary>
+    public const string AddonReleasePage = "https://github.com/360recomper/UFC3ReX/releases/tag/v1.1.8";
+    public const string AddonApi = "https://api.github.com/repos/360recomper/UFC3ReX/releases/tags/v1.1.8";
     public const string LauncherName = "UFC3 Launcher.exe";
     public static string BackupRoot => Path.Combine(Paths.Root, "update-backups");
     static string DownloadDir => Path.Combine(Paths.Root, "update-download");
@@ -48,11 +52,14 @@ public static class Updater
         return h;
     }
 
-    public static async Task<Release> FetchLatest(CancellationToken ct = default)
+    public static Task<Release> FetchLatest(CancellationToken ct = default) => Fetch(Api, ct);
+
+    /// <summary>One release from a GitHub API URL (releases/latest or releases/tags/&lt;tag&gt;).</summary>
+    public static async Task<Release> Fetch(string api, CancellationToken ct = default)
     {
         using var http = Http(TimeSpan.FromSeconds(15));
         http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        using var doc = JsonDocument.Parse(await http.GetStringAsync(Api, ct));
+        using var doc = JsonDocument.Parse(await http.GetStringAsync(api, ct));
         var r = doc.RootElement;
         Asset? game = null, addon = null;
         foreach (var a in r.GetProperty("assets").EnumerateArray())

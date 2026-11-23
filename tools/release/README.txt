@@ -1,5 +1,10 @@
-UFC Undisputed 3 Recomp
-=======================
+UFC Undisputed 3 Recomp: Enhanced
+=================================
+
+This is the UFC3ReX-Enhanced fork (github.com/terrornoize/UFC3ReX-Enhanced) of
+360recomper's UFC3ReX (github.com/360recomper/UFC3ReX). It adds: native renderer
+VRAM leak fix, real-time round clock, careers of 96 or 192 fights, and
+ultrawide 21:9 / 32:9 matches (experimental). See the fork's README.
 
 A native Windows PC port of UFC Undisputed 3 (Xbox 360), made by static
 recompilation. It runs the original game's code natively. It is not an emulator.

@@ -30,7 +30,7 @@ public class PlayTab : ILauncherTab
     public PlayTab()
     {
         var col = Ui.Column();
-        header.Text = "Undisputed Ultimate Edition   v" + AppVersion.Installed + "  (launcher " + AppVersion.Launcher + ")";
+        header.Text = "Undisputed Ultimate Edition Enhanced   v" + AppVersion.Installed + "  (launcher " + AppVersion.Launcher + ")";
         col.Controls.Add(header);
         play = new FlatButton { Kind = BtnKind.Play, Text = "Play", Width = Theme.S(320), Height = Theme.S(82), Margin = new Padding(-Theme.S(7), Theme.S(6), 0, Theme.S(8)) };
         play.Click += (_, _) => Launch();
@@ -131,7 +131,7 @@ public class PlayTab : ILauncherTab
                 return;
             }
             updInfo.Text = res.Log.LastOrDefault() ?? $"Updated to v{rel.Version}.";
-            header.Text = "Undisputed Ultimate Edition   v" + AppVersion.Installed + "  (launcher " + AppVersion.Launcher + ")";
+            header.Text = "Undisputed Ultimate Edition Enhanced   v" + AppVersion.Installed + "  (launcher " + AppVersion.Launcher + ")";
             Updated?.Invoke();
         }
         catch (Exception ex) { updInfo.Text = "Update failed: " + ex.Message; updBtn.Enabled = true; }
