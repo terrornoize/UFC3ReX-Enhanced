@@ -20,6 +20,12 @@
 - **Ultrawide 21:9 / 32:9 Hor+ in matches** (Settings > Aspect ratio, native renderer). You see more at the sides,
   fighters keep their proportions, the HUD stays centred, and menus stay 16:9. This is experimental: some menus and
   training mode can still look wrong.
+- **Cloud saves** (Settings > Saves > Choose cloud folder, for example `%OneDrive%\SaveGames\UFC3ReX-Enhanced`): one
+  career shared between PCs. Before Play the launcher downloads newer saves, and when the game closes it uploads them.
+  Saves, created fighters, careers, achievements and DLC are synced; highlight replays are not. If the game is still
+  running on another PC you get a warning. When both copies changed, the launcher asks which one to keep and keeps the
+  other as a backup. Every file is hash-checked, so a folder the cloud app has only half synced is never used. The
+  career length follows the saves. Start the game from the launcher on every PC.
 - F9 in game writes one frame's draws to the log (for reporting graphics glitches).
 - `env.bat` finds Visual Studio 2022 or 2026 through vswhere.
 

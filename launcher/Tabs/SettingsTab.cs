@@ -19,6 +19,7 @@ public class SettingsTab : ILauncherTab
     // merge7: the Gameplay rows only work with the mod pack (its marker file in the mods folder).
     readonly List<Control> packOnly = new();
     readonly Label packHint = Ui.Text("");
+    readonly Label cloudPath = Ui.Text("");
 
     public string Title => "Settings";
     public Control View => col;
@@ -108,6 +109,19 @@ public class SettingsTab : ILauncherTab
         clockHint.ForeColor = Theme.Muted;
         col.Controls.Add(clockHint);
 
+        col.Controls.Add(Ui.Head("Saves"));
+        col.Controls.Add(cloudPath);
+        var cloudRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+        cloudRow.Controls.Add(Ui.AutoBtn("Choose cloud folder...", (_, _) => ChooseCloudFolder()));
+        cloudRow.Controls.Add(Ui.AutoBtn("Open", (_, _) => { if (CloudSave.Resolve(CloudSave.Configured) is { } d && Directory.Exists(d)) Ui.OpenFolder(d); }));
+        cloudRow.Controls.Add(Ui.AutoBtn("Stop syncing", (_, _) => { Write(t => t.SetStr(CloudSave.TomlKey, "")); ShowCloud(); }));
+        col.Controls.Add(cloudRow);
+        var cloudHint = Ui.Text("A copy of your saves in a folder your cloud app syncs (for example OneDrive), to share one career between PCs. " +
+            "The launcher downloads newer saves before Play and uploads them when the game closes. Saves, created fighters, careers, " +
+            "achievements and DLC are synced; highlight replays are not. Start the game from this launcher on every PC.");
+        cloudHint.ForeColor = Theme.Muted;
+        col.Controls.Add(cloudHint);
+
         col.Controls.Add(Ui.Head("Unlocks"));
         col.Controls.Add(Check("ufc3_unlock_all", "Unlock everything", false, "Every fighter and unlock-shop item counts as unlocked. Your save is not changed."));
         col.Controls.Add(Check("ufc3_free_unlock_points", "Unlock shop items are free", false, "Buying does not spend unlock points."));
@@ -162,6 +176,29 @@ public class SettingsTab : ILauncherTab
         foreach (var n in Gpu.AdapterNames()) { gpu.Items.Add(n); gpuValues.Add(n); }
         if (saved.Length > 0 && !gpuValues.Contains(saved)) { gpu.Items.Add(saved + " (not found)"); gpuValues.Add(saved); }
         gpu.SelectedIndex = Math.Max(0, gpuValues.IndexOf(saved));
+    }
+
+    void ShowCloud()
+    {
+        var c = CloudSave.Configured;
+        if (c.Length == 0) { cloudPath.Text = "Cloud save folder: off (saves stay on this PC)"; return; }
+        var r = CloudSave.Resolve(c);
+        cloudPath.Text = "Cloud save folder: " + c + (r == null ? "  (not found on this PC)" : r == c ? "" : "  (" + r + ")");
+    }
+
+    void ChooseCloudFolder()
+    {
+        var start = CloudSave.Resolve(CloudSave.Configured) ?? Environment.GetEnvironmentVariable("OneDrive") ?? "";
+        using var dlg = new FolderBrowserDialog
+        {
+            Description = "Folder for the cloud copy of your saves (for example OneDrive\\SaveGames\\UFC3ReX-Enhanced)",
+            UseDescriptionForTitle = true, ShowNewFolderButton = true, InitialDirectory = Directory.Exists(start) ? start : "",
+        };
+        if (dlg.ShowDialog(col.FindForm()) != DialogResult.OK) return;
+        var v = CloudSave.Portable(dlg.SelectedPath);
+        Write(t => t.SetStr(CloudSave.TomlKey, v));
+        ShowCloud();
+        status.Text = "Saved. Your saves are synced with this folder at the next Play.";
     }
 
     static string MusicDir()
@@ -242,6 +279,7 @@ public class SettingsTab : ILauncherTab
             : "Needs the mod pack (Mod Pack tab): without it the game plays stock, with stock cuts and blood, and no bare knuckle or attire picker.";
         cap.Value = Math.Clamp(t.GetInt("ufc3_roster_cap", 1024), 0, 4096);
         status.Text = File.Exists(Paths.Toml) ? "" : "ufc3.toml does not exist yet: it is created when you change something here.";
+        ShowCloud();
         loading = false;
     }
 }

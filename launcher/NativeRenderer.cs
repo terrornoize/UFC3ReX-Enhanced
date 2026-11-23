@@ -89,12 +89,14 @@ public static class NativeRenderer
     /// emulated renderer for that run only (ufc3.toml is not changed). Logged to launcher-native.log.</summary>
     public static void PlayFrom(Control from)
     {
+        if (!CloudSave.BeforePlay()) return;
         var game = Launch();
         var form = from.FindForm();
         form?.Hide();
         new Thread(() =>
         {
             WaitAndFallBack(game);
+            CloudSave.AfterPlay();
             if (form != null && form.IsHandleCreated) form.BeginInvoke(Application.Exit); else Application.Exit();
         }) { IsBackground = false, Name = "native-wait" }.Start();
     }
