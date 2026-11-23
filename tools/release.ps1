@@ -65,8 +65,9 @@ if ($exeText.Contains('native: renderer on (experimental')) {
 Remove-Variable exeText
 
 # App-local VC++ runtime so players need no redistributable installer.
-$crt = Get-ChildItem 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT' -ErrorAction SilentlyContinue |
-  Sort-Object Name -Descending | Select-Object -First 1
+# Any Visual Studio / Build Tools (2022, 2026, ...): the newest CRT, which the newest toolset links against.
+$crt = Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT' -ErrorAction SilentlyContinue |
+  Sort-Object { [version]($_.Parent.Parent.Name -replace '[^\d.]', '') } -Descending | Select-Object -First 1
 if ($crt) {
   foreach ($d in 'msvcp140.dll', 'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
     Copy-Item (Join-Path $crt.FullName $d) $stage

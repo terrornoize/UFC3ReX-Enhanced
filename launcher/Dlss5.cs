@@ -69,10 +69,10 @@ public static class Dlss5
         return log;
     }
 
-    /// <summary>Downloads the add-on zip of the latest release (SHA-256 checked) and installs it.</summary>
+    /// <summary>Downloads the add-on zip from the original project's release (SHA-256 checked) and installs it.</summary>
     public static async Task<List<string>> DownloadAddon(IProgress<double>? progress, CancellationToken ct)
     {
-        var rel = await Updater.FetchLatest(ct);
+        var rel = await Updater.Fetch(Updater.AddonApi, ct);
         var a = rel.Dlss5Addon ?? throw new InvalidDataException($"Release {rel.Tag} has no DLSS 5 add-on zip. Use the release page.");
         var zip = await Updater.Download(a, progress, ct);
         var log = InstallAddon(zip);

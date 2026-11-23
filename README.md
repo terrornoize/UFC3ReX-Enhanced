@@ -1,4 +1,30 @@
-# UFC Undisputed 3 Recomp
+# UFC Undisputed 3 Recomp: Enhanced
+
+> **This is a fork** of [360recomper/UFC3ReX](https://github.com/360recomper/UFC3ReX). The recompilation and almost
+> all of this project are 360recomper's work, and the native renderer is nefariousjosiah's (see Credits below). This fork
+> adds the fixes and options listed under [What this fork adds](#what-this-fork-adds). It is offered back to the
+> original project ([issue #13](https://github.com/360recomper/UFC3ReX/issues/13)). The launcher here updates from
+> **this fork's** releases. The DLSS 5 add-on still comes from the original project.
+
+## What this fork adds
+
+- **Native renderer VRAM leak fixed:** video memory no longer keeps growing during long sessions. Retired and abandoned
+  surfaces are freed, and so are idle resolve targets. Each fix can be turned off with a bit of `ufc3_native_off2`
+  (2, 4, 8).
+- **Real-time round clock** (Settings > Fight > Round clock, off by default). The game's clock counts 30 ticks a
+  second but runs at 60 fps, so a 5:00 round was over in 2:30. With this option one clock second is one real second,
+  for both the round's own timer and the HUD clock. Pauses and slow motion are respected.
+- **Longer careers** (Settings > Career > Career length: 48, 96 or 192 fights). The last-year warning still comes in the
+  last year. With a longer career, a safety copy of the career save is made just before fight 48 (and 96), in
+  `userdata\<profile>\5451087D\ufc3-career-backup\`.
+- **Ultrawide 21:9 / 32:9 Hor+ in matches** (Settings > Aspect ratio, native renderer). You see more at the sides,
+  fighters keep their proportions, the HUD stays centred, and menus stay 16:9. This is experimental: some menus and
+  training mode can still look wrong.
+- F9 in game writes one frame's draws to the log (for reporting graphics glitches).
+- `env.bat` finds Visual Studio 2022 or 2026 through vswhere.
+
+The mod pack "UFC 3 Legends: Cut Fighters" is the original author's and is not distributed here.
+
 
 A native Windows PC port of **UFC Undisputed 3** (Xbox 360), made by static recompilation with the
 [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). It runs the original game code natively. It is not an emulator.

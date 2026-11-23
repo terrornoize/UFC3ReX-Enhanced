@@ -40,7 +40,7 @@ public class Dlss5Tab : ILauncherTab
         col.Controls.Add(row);
         dlBtn = Ui.AutoBtn("Download add-on", async (_, _) => await DownloadAddon());
         zipBtn = Ui.AutoBtn("Install add-on from zip...", (_, _) => InstallZip());
-        addonRow.Controls.AddRange(new Control[] { dlBtn, zipBtn, Ui.AutoBtn("Release page", (_, _) => Open(Updater.ReleasesPage)) });
+        addonRow.Controls.AddRange(new Control[] { dlBtn, zipBtn, Ui.AutoBtn("Release page", (_, _) => Open(Updater.AddonReleasePage)) });
         col.Controls.Add(addonRow);
 
         col.Controls.Add(Ui.Head("Settings"));
